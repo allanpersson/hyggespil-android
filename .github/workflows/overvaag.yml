@@ -1,0 +1,37 @@
+name: Overvågning
+
+# Daglig kontrol af at Android-appen følger spillet:
+# nyeste Android-udgivelse skal have samme x.y.z som spillets manifest, og
+# APK + AAB skal være vedhæftet. Fejler kun, når noget faktisk er i vejen.
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paritet:
+    name: Android følger spillet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tjek versioner og filer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          spil=$(curl -sf https://raw.githubusercontent.com/allanpersson/hyggespil/main/custom_components/hyggespil/manifest.json | python -c 'import json,sys;print(json.load(sys.stdin)["version"])')
+          echo "spilversion: $spil"
+          tag=$(gh release view --repo allanpersson/hyggespil-android --json tagName -q .tagName)
+          echo "android-udgivelse: $tag"
+          base=$(echo "$tag" | cut -d. -f1-3)
+          if [ "$base" != "$spil" ]; then
+            echo "FEJL: Android ($tag) følger ikke spillet ($spil)"
+            exit 1
+          fi
+          assets=$(gh release view "$tag" --repo allanpersson/hyggespil-android --json assets -q '.assets[].name')
+          echo "$assets"
+          echo "$assets" | grep -q '\.apk$' || { echo "FEJL: APK mangler"; exit 1; }
+          echo "$assets" | grep -q '\.aab$' || { echo "FEJL: AAB mangler"; exit 1; }
+          echo "OK: Android $tag matcher spillet $spil"
