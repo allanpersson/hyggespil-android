@@ -1,0 +1,72 @@
+name: Validering
+
+# Kodekontrol uden at udgive noget: lint, unit-test-opgave og en debug-APK.
+# Kører ved push og pull request, så fejl ses med det samme.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kode:
+    name: Lint, test og debug-APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hent spillets filer
+        uses: actions/checkout@v4
+        with:
+          repository: allanpersson/hyggespil
+          ref: main
+          path: game
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Kopiér spillet ind i appen
+        run: python tools/synk_spil.py game
+
+      - name: Spillets filer er komplette
+        run: |
+          test -f app/src/main/assets/www/hs.html
+          test -f app/src/main/assets/www/index.html
+          n=$(find app/src/main/assets/www -name '*.js' | wc -l)
+          test "$n" -ge 50
+          echo "$n js-filer"
+
+      - name: Manifest og res er gyldige
+        run: |
+          test -f app/src/main/AndroidManifest.xml
+          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
+          grep -q 'app_name' app/src/main/res/values/strings.xml
+
+      - name: Lint
+        run: gradle --no-daemon lintDebug -PversionName=$(cat version.txt)
+
+      - name: Unit-testopgave
+        run: gradle --no-daemon testDebugUnitTest -PversionName=$(cat version.txt)
+
+      - name: Byg debug-APK
+        run: gradle --no-daemon assembleDebug -PversionName=$(cat version.txt)
+
+      - name: Gem debug-APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggespil-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
