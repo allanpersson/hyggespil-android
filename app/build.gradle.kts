@@ -6,8 +6,8 @@ plugins {
 /* Versionen kommer fra spillets manifest.json (sendes ind som -PversionName=x.y.z).
    versionCode laves af x.y.z, så hver udgivelse kan opdateres på Android. */
 val spillVersion = (findProperty("versionName") as String?) ?: "0.0.0"
-val dele = spillVersion.split(".").map { it.toIntOrNull() ?: 0 }
-val spillKode = dele.getOrElse(0) { 0 } * 10000 + dele.getOrElse(1) { 0 } * 100 + dele.getOrElse(2) { 0 }
+val dele = (0..3).map { spillVersion.split(".").getOrNull(it)?.toIntOrNull() ?: 0 }
+val spillKode = dele[0] * 1000000 + dele[1] * 10000 + dele[2] * 100 + dele[3]
 
 android {
     namespace = "dk.allanpersson.hyggespil"
