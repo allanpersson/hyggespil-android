@@ -1,7 +1,11 @@
 name: Android APK
 
-# Kører hver time og ved push. Bygger kun, hvis spillets version ikke allerede
-# findes som Android-udgivelse – så de to altid følges ad med samme nummer.
+# Android-versionen følger spillets version. Er der brug for at bygge igen på
+# samme spilversion (fx en rettelse i appen), får udgivelsen et fjerde led:
+# 0.2.43 → 0.2.43.1 → 0.2.43.2.
+#
+# Kører ved push, hver time og manuelt. Springer over, når spillets version
+# allerede har en Android-udgivelse – med mindre man tvinger en ny.
 
 on:
   push:
@@ -9,6 +13,11 @@ on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
+    inputs:
+      tving:
+        description: Byg også selv om spillets version findes (giver x.y.z.N)
+        type: boolean
+        default: true
   repository_dispatch:
     types: [nyt-spil]
 
@@ -57,29 +66,46 @@ jobs:
           echo "js-filer i assets: $n"
           test "$n" -ge 50
 
-      - name: Læs spilversion
-        id: version
-        run: |
-          v=$(cat version.txt)
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "spilversion: $v"
-
-      - name: Findes versionen allerede?
-        id: ny
+      - name: Afgør version og om der skal bygges
+        id: plan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          v="${{ steps.version.outputs.version }}"
-          if gh release view "$v" --repo allanpersson/hyggespil-android >/dev/null 2>&1; then
-            echo "ny=nej" >> "$GITHUB_OUTPUT"
-            echo "Android-udgivelsen $v findes allerede – springer byg over"
-          else
-            echo "ny=ja" >> "$GITHUB_OUTPUT"
-            echo "Ny version $v – bygger nu"
+          base=$(cat version.txt)
+          findes=nej
+          gh release view "$base" --repo allanpersson/hyggespil-android >/dev/null 2>&1 && findes=ja
+
+          byg=ja
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "push" ]; then
+            [ "$findes" = "ja" ] && byg=nej
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.tving }}" != "true" ]; then
+            byg=nej
           fi
 
+          tag="$base"
+          if [ "$findes" = "ja" ]; then
+            max=0
+            for t in $(gh release list --repo allanpersson/hyggespil-android --limit 300 --json tagName -q '.[].tagName'); do
+              case "$t" in
+                "$base".*)
+                  n=${t#"$base".}
+                  case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -gt "$max" ] && max=$n ;; esac
+                  ;;
+              esac
+            done
+            tag="$base.$((max + 1))"
+          fi
+
+          echo "spilversion: $base"
+          echo "findes: $findes"
+          echo "byg: $byg"
+          echo "version: $tag" >> "$GITHUB_OUTPUT"
+          echo "byg=$byg" >> "$GITHUB_OUTPUT"
+          echo "udgivelse: $tag"
+
       - name: Signeringsnøgle (hvis den findes som secret)
-        if: steps.ny.outputs.ny == 'ja'
+        if: steps.plan.outputs.byg == 'ja'
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -98,48 +124,48 @@ jobs:
           fi
 
       - name: Lint-projektet
-        if: steps.ny.outputs.ny == 'ja'
-        run: gradle --no-daemon lintDebug -PversionName=${{ steps.version.outputs.version }}
+        if: steps.plan.outputs.byg == 'ja'
+        run: gradle --no-daemon lintDebug -PversionName=${{ steps.plan.outputs.version }}
 
       - name: Byg APK til selvinstallation
-        if: steps.ny.outputs.ny == 'ja'
-        run: gradle --no-daemon assembleRelease -PversionName=${{ steps.version.outputs.version }}
+        if: steps.plan.outputs.byg == 'ja'
+        run: gradle --no-daemon assembleRelease -PversionName=${{ steps.plan.outputs.version }}
 
       - name: Byg AAB til Google Play
-        if: steps.ny.outputs.ny == 'ja'
-        run: gradle --no-daemon bundleRelease -PversionName=${{ steps.version.outputs.version }}
+        if: steps.plan.outputs.byg == 'ja'
+        run: gradle --no-daemon bundleRelease -PversionName=${{ steps.plan.outputs.version }}
 
       - name: Tjek APK'ens indhold og version
-        if: steps.ny.outputs.ny == 'ja'
+        if: steps.plan.outputs.byg == 'ja'
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
           unzip -l "$apk" | grep -q 'assets/www/hs.html' || { echo "hs.html mangler i APK"; exit 1; }
           unzip -l "$apk" | grep -q 'assets/www/index.html' || { echo "index.html mangler i APK"; exit 1; }
-          echo "APK: $(du -h "$apk" | cut -f1) – version ${{ steps.version.outputs.version }}"
+          echo "APK: $(du -h "$apk" | cut -f1) – version ${{ steps.plan.outputs.version }}"
 
       - name: Omdøb filerne
-        if: steps.ny.outputs.ny == 'ja'
+        if: steps.plan.outputs.byg == 'ja'
         run: |
           mkdir -p ud
-          cp app/build/outputs/apk/release/app-release.apk "ud/hyggespil-${{ steps.version.outputs.version }}.apk"
-          cp app/build/outputs/bundle/release/app-release.aab "ud/hyggespil-${{ steps.version.outputs.version }}.aab"
+          cp app/build/outputs/apk/release/app-release.apk "ud/hyggespil-${{ steps.plan.outputs.version }}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "ud/hyggespil-${{ steps.plan.outputs.version }}.aab"
           ls -l ud
 
       - name: Gem som artifact
-        if: steps.ny.outputs.ny == 'ja'
+        if: steps.plan.outputs.byg == 'ja'
         uses: actions/upload-artifact@v4
         with:
-          name: hyggespil-apk-${{ steps.version.outputs.version }}
+          name: hyggespil-apk-${{ steps.plan.outputs.version }}
           path: ud/*
           retention-days: 30
 
       - name: Opret udgivelse med APK
-        if: steps.ny.outputs.ny == 'ja'
+        if: steps.plan.outputs.byg == 'ja'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          v="${{ steps.version.outputs.version }}"
+          v="${{ steps.plan.outputs.version }}"
           gh release create "$v" ud/* \
             --title "Hyggespil Android $v" \
-            --notes "Android-app til Hyggespil $v – samme versionsnummer som spillet. Hent APK'en, åbn den på telefonen og tillad installation fra denne kilde." \
+            --notes "Android-app til Hyggespil $v. Første led følger spillet; et fjerde led betyder en ny bygning på samme spilversion. Hent APK'en, åbn den på telefonen og tillad installation fra denne kilde." \
             --latest
