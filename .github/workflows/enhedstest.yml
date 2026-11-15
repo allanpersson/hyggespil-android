@@ -1,0 +1,79 @@
+name: Enhedstest (emulator)
+
+# Installerer APK'en på en rigtig Android-emulator og starter appen.
+# Kører ugentligt og manuelt – det er den tunge, men mest realistiske test.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Installer og start appen
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hent spillets filer
+        uses: actions/checkout@v4
+        with:
+          repository: allanpersson/hyggespil
+          ref: main
+          path: game
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Kopiér spillet ind i appen
+        run: python tools/synk_spil.py game
+
+      - name: Byg APK
+        run: gradle --no-daemon assembleRelease -PversionName=$(cat version.txt)
+
+      - name: Aktivér KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start appen på emulatoren
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n dk.allanpersson.hyggespil/.MainActivity
+            sleep 10
+            pid=$(adb shell pidof dk.allanpersson.hyggespil | tr -d '\r')
+            echo "pid: $pid"
+            test -n "$pid" || { echo "Appen kører ikke"; exit 1; }
+            adb shell dumpsys window | grep -i mCurrentFocus
+            if adb logcat -d -s AndroidRuntime:E | grep -q 'FATAL EXCEPTION'; then
+              echo "Appen crashede:"; adb logcat -d -s AndroidRuntime:E | tail -n 40; exit 1
+            fi
+            adb exec-out screencap -p > skaerm.png
+            ls -l skaerm.png
+
+      - name: Gem skærmbillede
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-skarmbillede
+          path: skaerm.png
+          if-no-files-found: ignore
+          retention-days: 14
