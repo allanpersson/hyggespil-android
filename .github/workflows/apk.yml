@@ -1,23 +1,23 @@
 name: Android APK
 
-# Android-versionen følger spillets version. Er der brug for at bygge igen på
-# samme spilversion (fx en rettelse i appen), får udgivelsen et fjerde led:
-# 0.2.43 → 0.2.43.1 → 0.2.43.2.
+# Versionering:
+#   0.2.43      = første Android-byg af spillets version 0.2.43
+#   0.2.43.1    = appen er ændret/rettet, men spillet er stadig 0.2.43
+#   0.2.44      = nyt spil
 #
-# Kører ved push, hver time og manuelt. Springer over, når spillets version
-# allerede har en Android-udgivelse – med mindre man tvinger en ny.
+# Der oprettes KUN en udgivelse, når indholdet faktisk er ændret. Hver udgivelse
+# gemmer et fingeraftryk (app-hash) i noterne, så efterfølgende kørsler kan se,
+# at der ikke er noget nyt at bygge – og så springes hele byggeriet over.
 
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       tving:
-        description: Byg også selv om spillets version findes (giver x.y.z.N)
+        description: Byg alligevel (giver x.y.z.N, selv om intet er ændret)
         type: boolean
-        default: true
+        default: false
   repository_dispatch:
     types: [nyt-spil]
 
@@ -70,39 +70,49 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TVING: ${{ inputs.tving }}
         run: |
-          base=$(cat version.txt)
-          findes=nej
-          gh release view "$base" --repo allanpersson/hyggespil-android >/dev/null 2>&1 && findes=ja
+          spil=$(cat version.txt)
+          base3() { echo "$1" | cut -d. -f1-3; }
+          # fingeratryk: spillets filer + appens kode + værktøj + workflow
+          apphash=$(
+            { find app/src/main/assets/www -type f -print0 | sort -z | xargs -0 sha256sum
+              find app/src -type f -not -path '*/assets/www/*' -print0 | sort -z | xargs -0 sha256sum
+              sha256sum build.gradle.kts settings.gradle.kts gradle.properties tools/synk_spil.py .github/workflows/apk.yml
+            } | sha256sum | cut -d' ' -f1
+          )
+          echo "apphash=$apphash"
 
-          byg=ja
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "push" ]; then
-            [ "$findes" = "ja" ] && byg=nej
-          fi
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.tving }}" != "true" ]; then
-            byg=nej
+          latest_tag=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          latest_body=$(gh release view --json body -q .body 2>/dev/null || true)
+          latest_hash=$(printf '%s' "$latest_body" | grep -o 'app-hash: [0-9a-f]*' | cut -d' ' -f2 || true)
+
+          if [ "$TVING" != "true" ] && [ "$latest_hash" = "$apphash" ]; then
+            echo "byg=nej" >> "$GITHUB_OUTPUT"
+            echo "Ingen ændringer siden $latest_tag – springer over"
+            exit 0
           fi
 
-          tag="$base"
-          if [ "$findes" = "ja" ]; then
-            max=0
-            for t in $(gh release list --repo allanpersson/hyggespil-android --limit 300 --json tagName -q '.[].tagName'); do
+          # nyt nummer: samme spilversion -> x.y.z.N, ellers x.y.z
+          if [ -n "$latest_tag" ] && [ "$(base3 "$latest_tag")" = "$spil" ]; then
+            n=0
+            for t in $(gh release list --limit 300 --json tagName -q '.[].tagName'); do
               case "$t" in
-                "$base".*)
-                  n=${t#"$base".}
-                  case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -gt "$max" ] && max=$n ;; esac
+                "$spil".*)
+                  x=${t#"$spil".}
+                  case "$x" in ''|*[!0-9]*) ;; *) [ "$x" -gt "$n" ] && n=$x ;; esac
                   ;;
               esac
             done
-            tag="$base.$((max + 1))"
+            tag="$spil.$((n + 1))"
+          else
+            tag="$spil"
           fi
 
-          echo "spilversion: $base"
-          echo "findes: $findes"
-          echo "byg: $byg"
-          echo "version: $tag" >> "$GITHUB_OUTPUT"
-          echo "byg=$byg" >> "$GITHUB_OUTPUT"
-          echo "udgivelse: $tag"
+          echo "byg=ja" >> "$GITHUB_OUTPUT"
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          echo "apphash=$apphash" >> "$GITHUB_OUTPUT"
+          echo "Spil: $spil · Android-udgivelse: $tag"
 
       - name: Signeringsnøgle (hvis den findes som secret)
         if: steps.plan.outputs.byg == 'ja'
@@ -165,7 +175,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${{ steps.plan.outputs.version }}"
-          gh release create "$v" ud/* \
-            --title "Hyggespil Android $v" \
-            --notes "Android-app til Hyggespil $v. Første led følger spillet; et fjerde led betyder en ny bygning på samme spilversion. Hent APK'en, åbn den på telefonen og tillad installation fra denne kilde." \
-            --latest
+          h="${{ steps.plan.outputs.apphash }}"
+          notes=$(printf 'Android-app til Hyggespil %s. Første tre led følger spillet; et fjerde led betyder en ny bygning på samme spilversion.\n\napp-hash: %s\n\nHent APK’en, åbn den på telefonen og tillad installation fra denne kilde.' "$v" "$h")
+          gh release create "$v" ud/* --title "Hyggespil Android $v" --notes "$notes" --latest
