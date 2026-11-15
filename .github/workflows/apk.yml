@@ -73,27 +73,22 @@ jobs:
           TVING: ${{ inputs.tving }}
         run: |
           spil=$(cat version.txt)
+          sha=$(git rev-parse HEAD)
           base3() { echo "$1" | cut -d. -f1-3; }
-          # fingeratryk: spillets filer + appens kode + værktøj + workflow
-          apphash=$(
-            { find app/src/main/assets/www -type f -print0 | sort -z | xargs -0 sha256sum
-              find app/src -type f -not -path '*/assets/www/*' -print0 | sort -z | xargs -0 sha256sum
-              sha256sum build.gradle.kts settings.gradle.kts gradle.properties tools/synk_spil.py .github/workflows/apk.yml
-            } | sha256sum | cut -d' ' -f1
-          )
-          echo "apphash=$apphash"
+          echo "spil=$spil android-sha=$sha"
 
           latest_tag=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
           latest_body=$(gh release view --json body -q .body 2>/dev/null || true)
-          latest_hash=$(printf '%s' "$latest_body" | grep -o 'app-hash: [0-9a-f]*' | cut -d' ' -f2 || true)
+          latest_spil=$(printf '%s' "$latest_body" | grep -o 'spil: [0-9.]*' | cut -d' ' -f2 || true)
+          latest_sha=$(printf '%s' "$latest_body" | grep -o 'android-sha: [0-9a-f]*' | cut -d' ' -f2 || true)
+          echo "seneste=$latest_tag spil=$latest_spil sha=$latest_sha"
 
-          if [ "$TVING" != "true" ] && [ "$latest_hash" = "$apphash" ]; then
+          if [ "$TVING" != "true" ] && [ "$latest_spil" = "$spil" ] && [ "$latest_sha" = "$sha" ]; then
             echo "byg=nej" >> "$GITHUB_OUTPUT"
             echo "Ingen ændringer siden $latest_tag – springer over"
             exit 0
           fi
 
-          # nyt nummer: samme spilversion -> x.y.z.N, ellers x.y.z
           if [ -n "$latest_tag" ] && [ "$(base3 "$latest_tag")" = "$spil" ]; then
             n=0
             for t in $(gh release list --limit 300 --json tagName -q '.[].tagName'); do
@@ -111,7 +106,6 @@ jobs:
 
           echo "byg=ja" >> "$GITHUB_OUTPUT"
           echo "version=$tag" >> "$GITHUB_OUTPUT"
-          echo "apphash=$apphash" >> "$GITHUB_OUTPUT"
           echo "Spil: $spil · Android-udgivelse: $tag"
 
       - name: Signeringsnøgle (hvis den findes som secret)
@@ -175,6 +169,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${{ steps.plan.outputs.version }}"
-          h="${{ steps.plan.outputs.apphash }}"
-          notes=$(printf 'Android-app til Hyggespil %s. Første tre led følger spillet; et fjerde led betyder en ny bygning på samme spilversion.\n\napp-hash: %s\n\nHent APK’en, åbn den på telefonen og tillad installation fra denne kilde.' "$v" "$h")
+          spil=$(cat version.txt)
+          sha=$(git rev-parse HEAD)
+          notes=$(printf 'Android-app til Hyggespil %s. Første tre led følger spillet; et fjerde led betyder en ny bygning på samme spilversion.\n\nspil: %s\nandroid-sha: %s\n\nHent APK’en, åbn den på telefonen og tillad installation fra denne kilde.' "$v" "$spil" "$sha")
           gh release create "$v" ud/* --title "Hyggespil Android $v" --notes "$notes" --latest
