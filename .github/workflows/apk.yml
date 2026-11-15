@@ -1,7 +1,8 @@
 name: Android APK
 
-# Bygger en ny APK, hver gang spillet ændrer sig – og en gang i døgnet som sikkerhed.
-# APK og AAB lægges både som artifact og som asset på en udgivelse.
+# Bygger APK og AAB ved hvert push, dagligt og ved manuel kørsel.
+# Linter projektet, tjekker at spillets filer faktisk ligger i APK'en, og lægger
+# begge filer på en udgivelse, så de kan hentes direkte.
 
 on:
   push:
@@ -17,7 +18,7 @@ permissions:
 
 jobs:
   apk:
-    name: Byg APK og AAB
+    name: Byg, lint og udgiv APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -47,6 +48,16 @@ jobs:
       - name: Kopiér spillet ind i appen
         run: python tools/synk_spil.py game
 
+      - name: Tjek at spillets filer er komplette
+        run: |
+          test -f app/src/main/assets/www/hs.html
+          test -f app/src/main/assets/www/index.html
+          test -f app/src/main/assets/www/hs-cfg.js
+          test -f app/src/main/assets/www/extra.json
+          n=$(find app/src/main/assets/www -name '*.js' | wc -l)
+          echo "js-filer i assets: $n"
+          test "$n" -ge 50
+
       - name: Læs spilversion
         id: version
         run: |
@@ -72,11 +83,25 @@ jobs:
             echo "ingen signeringsnøgle – bruger debug-nøgle til selvinstallation"
           fi
 
+      - name: Lint-projektet
+        run: gradle --no-daemon lintDebug -PversionName=${{ steps.version.outputs.version }}
+
       - name: Byg APK til selvinstallation
         run: gradle --no-daemon assembleRelease -PversionName=${{ steps.version.outputs.version }}
 
       - name: Byg AAB til Google Play
         run: gradle --no-daemon bundleRelease -PversionName=${{ steps.version.outputs.version }}
+
+      - name: Tjek APK'ens indhold og version
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          unzip -l "$apk" | grep -q 'assets/www/hs.html' || { echo "hs.html mangler i APK"; exit 1; }
+          unzip -l "$apk" | grep -q 'assets/www/index.html' || { echo "index.html mangler i APK"; exit 1; }
+          if unzip -l "$apk" | grep -qE 'assets/www/(extra|ledger)\.json' && unzip -p "$apk" assets/www/extra.json | grep -q '"'; then
+            echo "ADVARSEL: extra.json indeholder data"
+          fi
+          echo "APK: $(du -h "$apk" | cut -f1) – version ${{ steps.version.outputs.version }}"
+          ls -l app/build/outputs/apk/release/
 
       - name: Omdøb filerne
         run: |
