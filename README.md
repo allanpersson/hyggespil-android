@@ -6,8 +6,9 @@ selskabsspil til Home Assistant.
 App'en er en let WebView-container omkring spillet og indeholder **spillets filer direkte i APK'en**,
 så den kan spilles uden forbindelse til Home Assistant.
 
-**Versionen følger spillet:** Android-udgivelsen har samme nummer som spillet (fx `0.2.43`), og CI
-tjekker hver time, om der er en ny spilversion, den skal bygge.
+**Versionen følger spillet:** Android-udgivelsen har samme nummer som spillet (fx `0.2.43`).
+Skal appen bygges igen på samme spilversion, får udgivelsen et fjerde led: `0.2.43.1`, `0.2.43.2` …
+CI tjekker hver time, om der er en ny spilversion, den skal bygge.
 
 ## Hent og installer
 
