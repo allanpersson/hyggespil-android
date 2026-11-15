@@ -1,0 +1,98 @@
+name: Android APK
+
+# Bygger en ny APK, hver gang spillet ændrer sig – og en gang i døgnet som sikkerhed.
+# APK'en lægges både som artifact og som asset på en udgivelse, så den kan hentes direkte.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [nyt-spil]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Byg APK og AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Hent Android-projektet
+        uses: actions/checkout@v4
+
+      - name: Hent spillets filer
+        uses: actions/checkout@v4
+        with:
+          repository: allanpersson/hyggespil
+          ref: main
+          path: game
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Kopiér spillet ind i appen
+        run: python tools/synk_spil.py game
+
+      - name: Læs spilversion
+        id: version
+        run: |
+          v=$(cat version.txt)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "spilversion: $v"
+
+      - name: Signeringsnøgle (hvis den findes som secret)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/hyggespil.jks"
+          echo "ANDROID_KEYSTORE=$RUNNER_TEMP/hyggespil.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Byg APK til selvinstallation
+        run: gradle --no-daemon assembleRelease -PversionName=${{ steps.version.outputs.version }}
+
+      - name: Byg AAB til Google Play
+        run: gradle --no-daemon bundleRelease -PversionName=${{ steps.version.outputs.version }}
+
+      - name: Omdøb filerne
+        run: |
+          mkdir -p ud
+          cp app/build/outputs/apk/release/app-release.apk "ud/hyggespil-${{ steps.version.outputs.version }}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "ud/hyggespil-${{ steps.version.outputs.version }}.aab"
+          ls -l ud
+
+      - name: Gem som artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggespil-apk-${{ steps.version.outputs.version }}
+          path: ud/*
+          retention-days: 30
+
+      - name: Opret udgivelse med APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="v${{ steps.version.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" ud/* --clobber
+          else
+            gh release create "$tag" ud/* \
+              --title "Hyggespil Android ${{ steps.version.outputs.version }}" \
+              --notes "Android-app til Hyggespil ${{ steps.version.outputs.version }}. Hent APK'en, åbn den på telefonen og tillad installation fra denne kilde." \
+              --latest
+          fi

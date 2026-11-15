@@ -1,0 +1,124 @@
+package dk.allanpersson.hyggespil
+
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.view.KeyEvent
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.appcompat.app.AppCompatActivity
+import androidx.webkit.WebViewAssetLoader
+import java.util.Locale
+
+class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
+
+    private lateinit var web: WebView
+    private var tts: TextToSpeech? = null
+    private var taleKlar = false
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        tts = TextToSpeech(this, this)
+
+        web = WebView(this)
+        setContentView(web)
+        web.setBackgroundColor(0xFF0F0A24.toInt())
+        web.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            allowFileAccess = false
+            allowContentAccess = false
+            builtInZoomControls = false
+            displayZoomControls = false
+            textZoom = 100
+        }
+
+        val loader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) =
+                loader.shouldInterceptRequest(request.url)
+
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                indsætTaleBro()
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val u = request.url
+                if (u.host == "appassets.androidplatform.net") return false
+                /* eksterne links (fx kaffe-linket) åbnes i telefonens browser */
+                startActivity(Intent(Intent.ACTION_VIEW, u))
+                return true
+            }
+        }
+
+        web.addJavascriptInterface(this, "AndroidVaerktoej")
+        web.loadUrl("https://appassets.androidplatform.net/assets/www/hs.html")
+    }
+
+    /* Android kan tale dansk, også hvor WebView'en ikke kan. Broen giver spillet
+       en speechSynthesis, så oplæsningen virker uden Home Assistant. */
+    private fun indsætTaleBro() {
+        web.evaluateJavascript(
+            """
+            (function(){
+              if (window.__androidTale) return; window.__androidTale = true;
+              if (window.speechSynthesis && window.speechSynthesis.speak) return;
+              window.SpeechSynthesisUtterance = window.SpeechSynthesisUtterance || function(t){ this.text=t; this.lang='da-DK'; this.rate=1; this.pitch=1; };
+              window.speechSynthesis = {
+                speak: function(u){ try { AndroidVaerktoej.tal(String((u&&u.text)||'')); } catch(e){} },
+                cancel: function(){ try { AndroidVaerktoej.stopTale(); } catch(e){} },
+                pause: function(){}, resume: function(){},
+                getVoices: function(){ return []; },
+                speaking: false, pending: false, paused: false
+              };
+            })();
+            """.trimIndent(), null
+        )
+    }
+
+    @JavascriptInterface
+    fun tal(tekst: String) {
+        if (!taleKlar || tekst.isBlank()) return
+        tts?.speak(tekst, TextToSpeech.QUEUE_FLUSH, null, "hyggespil")
+    }
+
+    @JavascriptInterface
+    fun stopTale() {
+        tts?.stop()
+    }
+
+    override fun onInit(status: Int) {
+        taleKlar = status == TextToSpeech.SUCCESS
+        if (taleKlar) {
+            tts?.language = Locale("da", "DK")
+            tts?.setSpeechRate(1.0f)
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && web.canGoBack()) {
+            web.goBack()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        web.destroy()
+        super.onDestroy()
+    }
+}

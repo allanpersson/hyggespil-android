@@ -1,0 +1,11 @@
+Hyggespil er de danske selskabsspil til én fælles skærm – telefon, tablet eller tv.
+
+Spil quiz, gåder, ordspil, musik- og filmquizzer, børnespil og festlege sammen. Alt indhold er på dansk og skrevet til Hyggespil.
+
+• Over 90 spil og tusindvis af spørgsmål, opgaver og kort
+• Musik- og filmquizzer med årtier, genrer, MGP og dansk film
+• Børnespil med alderstilpasning
+• Spil sammen på flere telefoner via Home Assistant
+• Virker uden konto og uden reklamer – alt foregår på din enhed
+
+Appen er den lokale udgave af Hyggespil. Vil du have lys-automation, fælles rum og oplæsning via Home Assistant, så brug spillets panel i Home Assistant.

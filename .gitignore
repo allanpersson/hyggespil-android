@@ -1,0 +1,18 @@
+# Gradle og Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Byggede filer
+ud/
+app/src/main/assets/www/
+version.txt
+
+# Nøgler
+*.jks
+*.keystore
