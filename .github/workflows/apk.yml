@@ -1,7 +1,7 @@
 name: Android APK
 
 # Bygger en ny APK, hver gang spillet ændrer sig – og en gang i døgnet som sikkerhed.
-# APK'en lægges både som artifact og som asset på en udgivelse, så den kan hentes direkte.
+# APK og AAB lægges både som artifact og som asset på en udgivelse.
 
 on:
   push:
@@ -55,13 +55,22 @@ jobs:
           echo "spilversion: $v"
 
       - name: Signeringsnøgle (hvis den findes som secret)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/hyggespil.jks"
-          echo "ANDROID_KEYSTORE=$RUNNER_TEMP/hyggespil.jks" >> "$GITHUB_ENV"
-          echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/hyggespil.jks"
+            echo "ANDROID_KEYSTORE=$RUNNER_TEMP/hyggespil.jks" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PW" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PW" >> "$GITHUB_ENV"
+            echo "signerer med udgivelsesnøgle"
+          else
+            echo "ingen signeringsnøgle – bruger debug-nøgle til selvinstallation"
+          fi
 
       - name: Byg APK til selvinstallation
         run: gradle --no-daemon assembleRelease -PversionName=${{ steps.version.outputs.version }}
