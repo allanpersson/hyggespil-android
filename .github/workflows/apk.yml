@@ -171,5 +171,30 @@ jobs:
           v="${{ steps.plan.outputs.version }}"
           spil=$(cat version.txt)
           sha=$(git rev-parse HEAD)
-          notes=$(printf 'Android-app til Hyggespil %s. Første tre led følger spillet; et fjerde led betyder en ny bygning på samme spilversion.\n\nspil: %s\nandroid-sha: %s\n\nHent APK’en, åbn den på telefonen og tillad installation fra denne kilde.' "$v" "$spil" "$sha")
-          gh release create "$v" ud/* --title "Hyggespil Android $v" --notes "$notes" --latest
+
+          # Tag spillets changelog-afsnit med, så Android-udgivelsen viser de samme nyheder.
+          python - "$spil" > /tmp/spil_noter.md <<'PY'
+          import re, sys
+          version = sys.argv[1]
+          tekst = open("game/CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(r"^## " + re.escape(version) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", tekst, re.M | re.S)
+          print(m.group(1).strip() if m else "Se spillets CHANGELOG for nyheder.")
+          PY
+
+          {
+            cat /tmp/spil_noter.md
+            echo ""
+            echo "---"
+            if [ "$v" != "$spil" ]; then
+              echo "Ny bygning af Android-appen på samme spilversion ($spil)."
+              echo ""
+            fi
+            echo "Android-app til Hyggespil $v. De tre første led følger spillet; et fjerde led betyder en ny bygning på samme spilversion."
+            echo ""
+            echo "Hent APK’en, åbn den på telefonen og tillad installation fra denne kilde."
+            echo ""
+            echo "spil: $spil"
+            echo "android-sha: $sha"
+          } > /tmp/noter.md
+
+          gh release create "$v" ud/* --title "Hyggespil Android $v" --notes-file /tmp/noter.md --latest
