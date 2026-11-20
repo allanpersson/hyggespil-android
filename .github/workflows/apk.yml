@@ -110,6 +110,7 @@ jobs:
 
           echo "byg=ja" >> "$GITHUB_OUTPUT"
           echo "version=$tag" >> "$GITHUB_OUTPUT"
+          echo "spil=$spil" >> "$GITHUB_OUTPUT"
           echo "Spil: $spil · Android-udgivelse: $tag"
 
       - name: Signeringsnøgle (hvis den findes som secret)
@@ -173,17 +174,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${{ steps.plan.outputs.version }}"
-          spil=$(cat version.txt)
+          spil="${{ steps.plan.outputs.spil }}"
           sha=$(git rev-parse HEAD)
 
-          # Tag spillets changelog-afsnit med, så Android-udgivelsen viser de samme nyheder.
-          python - "$spil" > /tmp/spil_noter.md <<'PY'
-          import re, sys
-          version = sys.argv[1]
-          tekst = open("game/CHANGELOG.md", encoding="utf-8").read()
-          m = re.search(r"^## " + re.escape(version) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", tekst, re.M | re.S)
-          print(m.group(1).strip() if m else "Se spillets CHANGELOG for nyheder.")
-          PY
+          # Tag spillets changelog-afsnit med, så Android-udgivelsen viser de samme
+          # nyheder. Udgivelsens egen tekst bruges først, fordi main kan være et
+          # skridt bagud; derefter prøves CHANGELOG i den hentede kopi.
+          gh api "repos/allanpersson/hyggespil/releases/tags/$spil" -q .body > /tmp/spil_noter.md 2>/dev/null || true
+          if [ ! -s /tmp/spil_noter.md ]; then
+            python - "$spil" > /tmp/spil_noter.md <<'PY'
+            import re, sys
+            version = sys.argv[1]
+            tekst = open("game/CHANGELOG.md", encoding="utf-8").read()
+            m = re.search(r"^## " + re.escape(version) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", tekst, re.M | re.S)
+            print(m.group(1).strip() if m else "Se spillets CHANGELOG for nyheder.")
+            PY
+          fi
 
           {
             cat /tmp/spil_noter.md
