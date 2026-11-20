@@ -182,13 +182,7 @@ jobs:
           # skridt bagud; derefter prøves CHANGELOG i den hentede kopi.
           gh api "repos/allanpersson/hyggespil/releases/tags/$spil" -q .body > /tmp/spil_noter.md 2>/dev/null || true
           if [ ! -s /tmp/spil_noter.md ]; then
-            python - "$spil" > /tmp/spil_noter.md <<'PY'
-            import re, sys
-            version = sys.argv[1]
-            tekst = open("game/CHANGELOG.md", encoding="utf-8").read()
-            m = re.search(r"^## " + re.escape(version) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", tekst, re.M | re.S)
-            print(m.group(1).strip() if m else "Se spillets CHANGELOG for nyheder.")
-            PY
+            python3 -c 'import re, sys; v = sys.argv[1]; t = open("game/CHANGELOG.md", encoding="utf-8").read(); m = re.search(r"^## " + re.escape(v) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", t, re.M | re.S); print(m.group(1).strip() if m else "Se spillets CHANGELOG for nyheder.")' "$spil" > /tmp/spil_noter.md
           fi
 
           {
