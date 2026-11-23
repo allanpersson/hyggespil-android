@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Appen kører helt lokalt og har derfor ingen netværkstilladelse.
-         Eksterne links åbnes i telefonens browser. -->
+    <!-- Internettet bruges KUN, når man selv opretter eller deltager i et
+         fælles rum fra hver sin telefon (krypteret via ntfy.sh). Uden et rum
+         foregår alt lokalt i appen. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
