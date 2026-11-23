@@ -12,6 +12,10 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import java.util.Locale
 
@@ -31,9 +35,25 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         tts = TextToSpeech(this, this)
 
+        /* Kant-til-kant: på Android 15+ tegnes siden under status- og
+           navigationslinjen. Vi lægger selv sikkerhedsmargenen på WebView'en,
+           så hverken topkort eller fod forsvinder under systemlinjerne. */
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+
         web = WebView(this)
         setContentView(web)
         web.setBackgroundColor(0xFF0F0A24.toInt())
+        ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
+            val b = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            v.setPadding(b.left, b.top, b.right, b.bottom)
+            insets
+        }
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
