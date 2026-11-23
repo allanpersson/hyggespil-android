@@ -42,6 +42,11 @@ for base, mapper, filer in os.walk(KILDE):
 with open(os.path.join(MÅL, "extra.json"), "w", encoding="utf-8") as h:
     json.dump({}, h)
 
+# Appens egne flag: Android-appen kører lokalt og er Play-udgaven, så spillet
+# skjuler Home Assistant- og Music Assistant-valg og links til køb uden for butikken.
+with open(os.path.join(MÅL, "hs-app.js"), "w", encoding="utf-8") as h:
+    h.write("window.HSA = { android: true, play: true };\n")
+
 version = json.load(open(os.path.join(SPIL, "custom_components", "hyggespil", "manifest.json"),
                         encoding="utf-8"))["version"]
 with open(os.path.join(ROD, "version.txt"), "w", encoding="utf-8") as h:
