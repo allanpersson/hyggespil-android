@@ -51,7 +51,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: "8.13"
 
       - name: Kopiér spillet ind i appen
         run: python tools/synk_spil.py game
@@ -62,6 +62,9 @@ jobs:
           test -f app/src/main/assets/www/index.html
           test -f app/src/main/assets/www/hs-cfg.js
           test -f app/src/main/assets/www/extra.json
+          test -f app/src/main/assets/www/platform.js
+          test -f app/src/main/assets/www/hs-app.js
+          test -f app/src/main/assets/www/stotte.js
           n=$(find app/src/main/assets/www -name '*.js' | wc -l)
           echo "js-filer i assets: $n"
           test "$n" -ge 50
