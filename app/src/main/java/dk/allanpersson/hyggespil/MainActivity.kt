@@ -2,12 +2,13 @@ package dk.allanpersson.hyggespil
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -19,6 +20,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var web: WebView
     private var tts: TextToSpeech? = null
     private var taleKlar = false
+
+    /* Kun disse https-sider må åbnes uden for appen. Alt andet blokeres,
+       så en fejl i indholdet ikke kan sende brugeren videre til ukendte sider. */
+    private val tilladteVaerter = setOf("github.com", "buymeacoffee.com", "allanpersson.github.io")
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,10 +41,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             mediaPlaybackRequiresUserGesture = false
             allowFileAccess = false
             allowContentAccess = false
+            allowFileAccessFromFileURLs = false
+            allowUniversalAccessFromFileURLs = false
+            javaScriptCanOpenWindowsAutomatically = false
+            setSupportMultipleWindows(false)
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
             builtInZoomControls = false
             displayZoomControls = false
             textZoom = 100
         }
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -57,8 +69,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url
                 if (u.host == "appassets.androidplatform.net") return false
-                /* eksterne links (fx kaffe-linket) åbnes i telefonens browser */
-                startActivity(Intent(Intent.ACTION_VIEW, u))
+                /* Eksterne links åbnes kun, når de er https og på listen. */
+                if (u.scheme == "https" && tilladteVaerter.contains(u.host)) {
+                    startActivity(Intent(Intent.ACTION_VIEW, u))
+                }
                 return true
             }
         }
@@ -105,6 +119,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             tts?.language = Locale("da", "DK")
             tts?.setSpeechRate(1.0f)
         }
+    }
+
+    override fun onPause() {
+        tts?.stop()
+        super.onPause()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
