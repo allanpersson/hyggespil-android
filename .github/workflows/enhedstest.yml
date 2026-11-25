@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: "8.13"
 
       - name: Kopiér spillet ind i appen
         run: python tools/synk_spil.py game
