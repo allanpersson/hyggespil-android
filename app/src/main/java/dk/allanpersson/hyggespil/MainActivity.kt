@@ -5,12 +5,11 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
-import android.view.KeyEvent
-import android.webkit.JavascriptInterface
-import android.webkit.WebResourceRequest
+import android.webkit.JavascriptInterfaceimport android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -46,6 +45,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         web = WebView(this)
         setContentView(web)
+
+        /* Tilbageknappen (både hardware og gestus): spillet får først lov at lukke
+           en dialog eller gå hjem fra et spil. Først hvis det ikke kan, lukkes appen. */
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                web.evaluateJavascript("(window.hsTilbage && window.hsTilbage()) ? '1' : '0'") { res ->
+                    if (res != "1" && res != "\"1\"") finish()
+                }
+            }
+        })
         web.setBackgroundColor(0xFF0F0A24.toInt())
         ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
             val b = insets.getInsets(
@@ -144,14 +153,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onPause() {
         tts?.stop()
         super.onPause()
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && web.canGoBack()) {
-            web.goBack()
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
     }
 
     override fun onDestroy() {
